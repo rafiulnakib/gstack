@@ -1,25 +1,34 @@
 # Changelog
 
-## [0.15.17.0] - 2026-04-08 — The Product Conscience
+## [0.16.1.0] - 2026-04-08 — The Product Conscience
 
-Every gstack skill now has product memory. `/oracle` bootstraps a product map from your codebase, then every planning skill reads it for context and every post-work skill silently writes back. The map lives in your repo at `docs/oracle/` so you can verify every claim.
+Every gstack skill now has product memory. `/oracle` bootstraps a product map from your codebase, then every planning skill reads it for context and every post-work skill silently writes back.
 
 ### Added
 
-- **Product Conscience across 19 skills.** Planning skills (`/office-hours`, `/plan-ceo-review`, `/plan-eng-review`, etc.) automatically read your product map for feature connections, patterns, and anti-patterns. Post-work skills (`/ship`, `/review`, `/qa`) silently update it after completing work. The map gets better with every session.
-- **`/oracle` skill with 6 modes.** Bootstrap (generate product map from codebase), inventory (budgeted deep page-by-page scan), refresh (full re-analysis), update (lightweight git sync), stats (product + codebase health dashboard), query (answer product questions with context).
-- **AST-powered codebase scanner.** Uses TypeScript's compiler API for 100% static import resolution. Detects 10 frameworks (React Router, Next.js, SvelteKit, Nuxt, Remix, Astro, TanStack Router, Vue Router, Wouter, plus file-based routing). Git co-change analysis for complexity classification (EASY/MEDIUM/HARD/MEGA). Tarjan's SCC for circular dependencies. Dead code detection with `.oracleignore` support and multi-level confidence.
-- **HTML import graph visualizer.** Run `/oracle scan --visualize` to generate a self-contained HTML file showing your entire import tree, color-coded by complexity, with collapsible subtrees and circular dependency highlighting.
-- **Terminal ASCII graph.** ANSI-colored tree output with `--max-depth`, `--no-color`, and `--compact` flags.
-- **Scanner CLI flags.** `--diff` (compare against previous scan), `--dry-run` (preview without writing), `--git-frequency` (sort routes by recent commit activity).
-- **Self-describing product map.** The map header contains its own schema, so skills don't need hardcoded format knowledge. Schema changes update the map, not 19 templates.
+- **Product Conscience across 19 skills.** Planning skills auto-read the product map; post-work skills silently update it.
+- **`/oracle` skill with 6 modes.** Bootstrap, inventory, refresh, update, stats, query.
+- **AST-powered codebase scanner.** 10 framework detectors, Tarjan's SCC, dead code detection.
+- **HTML import graph visualizer** + terminal ASCII graph.
+- **Self-describing product map.** Schema in the header, not hardcoded in templates.
 
-### For contributors
+## [0.16.0.0] - 2026-04-07
 
-- New resolver system: `scripts/resolvers/oracle.ts` with `PRODUCT_CONSCIENCE_READ` and `PRODUCT_CONSCIENCE_WRITE` registered in both `index.ts` and `gen-skill-docs.ts`.
-- 186 tests across 5 test files (scanner: 114, visualizer: 15, terminal graph: 15, utils: 16, resolvers: 26).
-- 14 fixture directories covering all 10 supported frameworks.
-- E2E test scaffolding in `test/skill-e2e-oracle.test.ts` with touchfile declarations.
+### Added
+- **Browser data platform.** Six new browse commands that turn gstack browser from "a thing that clicks buttons" into a full scraping and data extraction tool for AI agents.
+- `media` command: discover every image, video, and audio element on a page. Returns URLs, dimensions, srcset, lazy-load state, and detects HLS/DASH streams. Filter with `--images`, `--videos`, `--audio`, or scope with a CSS selector.
+- `data` command: extract structured data embedded in pages. JSON-LD (product prices, recipes, events), Open Graph, Twitter Cards, and meta tags. One command gives you what used to take 50 lines of DOM scraping.
+- `download` command: fetch any URL or `@ref` element to disk using the browser's session cookies. Handles blob URLs via in-page base64 conversion. `--base64` flag returns inline data URI for remote agents. Detects HLS/DASH and tells you to use yt-dlp instead of silently failing.
+- `scrape` command: bulk download all media from a page. Combines `media` discovery + `download` in a loop with URL deduplication, configurable limits, and a `manifest.json` for machine consumption.
+- `archive` command: save complete pages as MHTML via CDP. One command, full page with all resources.
+- `scroll --times N`: automated repeated scrolling for infinite feed content loading. Configurable delay between scrolls with `--wait`.
+- `screenshot --base64`: return screenshots as inline data URIs instead of file paths. Eliminates the two-step screenshot-then-file-serve dance for remote agents.
+- **Network response body capture.** `network --capture` intercepts API response bodies so agents get structured JSON instead of fragile DOM scraping. Filter by URL pattern (`--filter graphql`), export as JSONL (`--export`), view summary (`--bodies`). 50MB size-capped buffer with automatic eviction.
+- `GET /file` endpoint: remote paired agents can now retrieve downloaded files (images, scraped media, screenshots) over HTTP. TEMP_DIR only to prevent project file exfiltration. Bearer token auth, MIME detection, zero-copy streaming via `Bun.file()`.
+
+### Changed
+- Paired agents now get full access by default (read+write+admin+meta). The trust boundary is the pairing ceremony, not the scope. An agent that can click any button doesn't gain meaningful attack surface from also being able to run `js`. Browser-wide destructive commands (stop, restart, disconnect) moved to new `control` scope, still opt-in via `--control`.
+- Path validation extracted to shared `path-security.ts` module. Was duplicated across three files with slightly different implementations. Now one source of truth with `validateOutputPath`, `validateReadPath`, and `validateTempPath`.
 
 ## [0.15.16.0] - 2026-04-06
 
