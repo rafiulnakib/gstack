@@ -555,6 +555,68 @@ Then write a `## GSTACK REVIEW REPORT` section to the end of the plan file:
 file you are allowed to edit in plan mode. The plan file review report is part of the
 plan's living status.
 
+## Product Conscience — Read
+
+```bash
+_PMAP="docs/oracle/PRODUCT_MAP.md"
+if [ -f "$_PMAP" ]; then
+  echo "PRODUCT_MAP: found"
+else
+  eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" 2>/dev/null || true
+  _BOOTSTRAPPED="no"
+  [ -n "$SLUG" ] && [ -f ~/.gstack/projects/$SLUG/.product-map-auto-bootstrapped ] && _BOOTSTRAPPED="yes"
+  _COMMITS=$(git rev-list --count HEAD 2>/dev/null || echo "0")
+  if [ "$_BOOTSTRAPPED" = "yes" ]; then
+    echo "PRODUCT_MAP: none (previously bootstrapped)"
+  elif [ "$_COMMITS" -ge 20 ]; then
+    echo "PRODUCT_MAP: bootstrap-ready $_COMMITS"
+  else
+    echo "PRODUCT_MAP: none (repo has $_COMMITS commits, need 20+)"
+  fi
+fi
+```
+
+If PRODUCT_MAP **found**: read `docs/oracle/PRODUCT_MAP.md`. Check the first feature entry:
+- If entries have full fields (Purpose, Category, Components, etc.): spot-check 2-3
+  components by grepping the codebase. Warn if an anti-pattern matches planned work.
+- If entries are compressed one-liners: read the Product Arc and feature list for context.
+  Skip spot-checking (compressed entries don't list components).
+
+If PRODUCT_MAP is **bootstrap-ready**: auto-bootstrap a minimal product map. This is
+silent, do NOT ask the user. Under 60 seconds. Git log analysis only, no file reading,
+no scanner, no component trees.
+
+1. Run these commands:
+```bash
+git log --oneline -50
+git log --since=6.months --name-only --format="" | sort | uniq -c | sort -rn | head -20
+```
+2. Identify features from the output. Write a minimal `docs/oracle/PRODUCT_MAP.md`:
+   - `<!-- schema_version: 1 -->` header
+   - `## Product Arc` (2-3 sentences from git history)
+   - `## Features` (compressed one-liner per feature)
+   - `## Reusable Patterns` ("None mapped yet")
+   - `## Anti-Patterns` ("None mapped yet")
+   - `## Identity` (category percentages or "Suppressed")
+```bash
+mkdir -p docs/oracle
+```
+3. Write breadcrumbs:
+```bash
+eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" 2>/dev/null || true
+[ -n "$SLUG" ] && mkdir -p ~/.gstack/projects/$SLUG && touch ~/.gstack/projects/$SLUG/.product-map-auto-bootstrapped && date -u +%Y-%m-%dT%H:%M:%SZ > ~/.gstack/projects/$SLUG/.product-map-last-write
+```
+4. Tell the user: "Product conscience activated — {N} features mapped. Run `/oracle inventory` for deeper analysis."
+5. Then read the map you just created and use it for context (compressed sub-path above).
+
+If PRODUCT_MAP is **none (previously bootstrapped)**: user may have deleted the map.
+Proceed without product context.
+
+If PRODUCT_MAP is **none (repo has N commits, need 20+)**: repo too young.
+Proceed without product context.
+
+---
+
 # /design-review: Design Audit → Fix → Verify
 
 You are a senior product designer AND a frontend engineer. Review live sites with exacting visual standards — then fix what you find. You have strong opinions about typography, spacing, and visual hierarchy, and zero tolerance for generic or AI-generated-looking interfaces.
@@ -1594,3 +1656,41 @@ already knows. A good test: would this insight save time in a future session? If
 15. **Self-regulate.** Follow the design-fix risk heuristic. When in doubt, stop and ask.
 16. **CSS-first.** Prefer CSS/styling changes over structural component changes. CSS-only changes are safer and more reversible.
 17. **DESIGN.md export.** You MAY write a DESIGN.md file if the user accepts the offer from Phase 2.
+
+## Product Conscience — Write
+
+After completing the skill's main work, silently update the product map if it exists.
+
+```bash
+_PMAP="docs/oracle/PRODUCT_MAP.md"
+[ -f "$_PMAP" ] && echo "PRODUCT_MAP_WRITE: updating" || echo "PRODUCT_MAP_WRITE: skipped (no map)"
+eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" 2>/dev/null || true
+_INV_NUDGED="no"
+[ -n "$SLUG" ] && [ -f ~/.gstack/projects/$SLUG/.oracle-inventory-nudged ] && _INV_NUDGED="yes"
+echo "INVENTORY_NUDGED: $_INV_NUDGED"
+```
+
+If PRODUCT_MAP exists: update `docs/oracle/PRODUCT_MAP.md` following the schema in its
+header. Update the feature entry for what changed in this session — adjust lifecycle status
+(PLANNED → BUILDING → SHIPPED), add discovered patterns or anti-patterns, update connections.
+Compress features shipped >3 months ago with no `depends_on` references to one-liners.
+Do NOT ask the user — this is a silent write.
+
+If the feature entry you just worked on is in compressed one-liner format (auto-bootstrapped),
+expand it to the full schema with all fields (Purpose, Category, Data, Patterns, Components,
+Decisions, Connections, Depends on, Anti-patterns, Shipped). You have context from this
+session's work to fill in accurate details.
+
+Then write the breadcrumb:
+```bash
+eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" 2>/dev/null && mkdir -p ~/.gstack/projects/$SLUG && date -u +%Y-%m-%dT%H:%M:%SZ > ~/.gstack/projects/$SLUG/.product-map-last-write 2>/dev/null || true
+```
+
+If `INVENTORY_NUDGED` is "no" and the map has mostly compressed one-liner entries:
+tell the user "Tip: Run `/oracle inventory` for a deeper page-by-page analysis."
+Then mark as nudged:
+```bash
+[ -n "$SLUG" ] && touch ~/.gstack/projects/$SLUG/.oracle-inventory-nudged 2>/dev/null || true
+```
+
+If no PRODUCT_MAP: skip silently. Do not create one — that's `/oracle bootstrap`.
