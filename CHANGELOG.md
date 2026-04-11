@@ -1,16 +1,26 @@
 # Changelog
 
-## [0.16.1.0] - 2026-04-08 — The Product Conscience
+## [0.16.3.0] - 2026-04-11 — Oracle fork sync
 
-Every gstack skill now has product memory. `/oracle` bootstraps a product map from your codebase, then every planning skill reads it for context and every post-work skill silently writes back.
+Merged upstream v0.16.2.0 (relationship closing + cookie picker fix). Oracle remains intact on this fork.
+
+## [0.16.2.0] - 2026-04-09
 
 ### Added
+- **Office hours now remembers you.** The closing experience adapts based on how many sessions you've done. First time: full YC plea and founder resources. Sessions 2-3: "Welcome back. Last time you were working on [your project]. How's it going?" Sessions 4-7: arc-level callbacks across your whole journey, accumulated signal visibility, and an auto-generated Builder Journey narrative. Sessions 8+: the data speaks for itself.
+- **Builder profile** tracks your office hours journey in a single append-only session log. Signals, design docs, assignments, topics, and resources shown, all in one file. No split-brain state, no separate config keys.
+- **Builder-to-founder nudge** for repeat builder-mode users who accumulate founder signals. Evidence-gated: only triggers when you've shown 5+ signals across 3+ builder sessions. Not a pitch. An observation.
+- **Journey-matched resources.** Instead of category-matching from the static pool, resources now match your accumulated session context. "You've been iterating on a fintech idea for 3 sessions... Tom Blomfield built Monzo from exactly this kind of persistence."
+- **Builder Journey Summary** auto-generates at session 5+ and opens in your browser. A narrative arc of your journey, not a data table. Written in second person, referencing specific things you said across sessions.
+- **Global resource dedup.** Resource links now dedup globally (not per-project), so switching repos doesn't reset your watch history. Each link shows only once, ever.
 
-- **Product Conscience across 19 skills.** Planning skills auto-read the product map; post-work skills silently update it.
-- **`/oracle` skill with 6 modes.** Bootstrap, inventory, refresh, update, stats, query.
-- **AST-powered codebase scanner.** 10 framework detectors, Tarjan's SCC, dead code detection.
-- **HTML import graph visualizer** + terminal ASCII graph.
-- **Self-describing product map.** Schema in the header, not hardcoded in templates.
+### Fixed
+- package.json version now stays in sync with VERSION file.
+
+## [0.16.1.0] - 2026-04-08
+
+### Fixed
+- Cookie picker no longer leaks the browse server auth token. Previously, opening the cookie picker page exposed the master bearer token in the HTML source, letting any local process extract it and execute arbitrary JavaScript in your browser session. Now uses a one-time code exchange with an HttpOnly session cookie. The token never appears in HTML, URLs, or browser history. (Reported by Horoshi at Vagabond Research, CVSS 7.8)
 
 ## [0.16.0.0] - 2026-04-07
 
