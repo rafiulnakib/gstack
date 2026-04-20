@@ -784,8 +784,6 @@ If a richer review report already exists, skip — review skills wrote it.
 
 PLAN MODE EXCEPTION — always allowed (it's the plan file).
 
-
-
 ## Product Conscience — Read
 
 ```bash
@@ -847,6 +845,8 @@ If PRODUCT_MAP is **none (repo has N commits, need 20+)**: repo too young.
 Proceed without product context.
 
 ---
+
+
 
 # /cso — Chief Security Officer Audit (v2)
 
