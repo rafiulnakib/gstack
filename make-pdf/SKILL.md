@@ -5,11 +5,9 @@ version: 1.0.0
 description: |
   Turn any markdown file into a publication-quality PDF. Proper 1in margins,
   intelligent page breaks, page numbers, cover pages, running headers, curly
-  quotes and em dashes, clickable TOC, diagonal DRAFT watermark. Output you'd
-  send to a VC partner, a book agent, a judge, or Rick Rubin's team. Not a
-  draft artifact — a finished artifact. Use when asked to "make a PDF",
-  "export to PDF", "turn this markdown into a PDF", or "generate a document".
-  (gstack)
+  quotes and em dashes, clickable TOC, diagonal DRAFT watermark. Not a draft
+  artifact — a finished artifact. Use when asked to "make a PDF", "export to
+  PDF", "turn this markdown into a PDF", or "generate a document". (gstack)
   Voice triggers (speech-to-text aliases): "make this a pdf", "make it a pdf", "export to pdf", "turn this into a pdf", "turn this markdown into a pdf", "generate a pdf", "make a pdf from", "pdf this markdown".
 triggers:
   - markdown to pdf
@@ -266,23 +264,44 @@ If A: Append this section to the end of CLAUDE.md:
 
 ## Skill routing
 
-When the user's request matches an available skill, ALWAYS invoke it using the Skill
-tool as your FIRST action. Do NOT answer directly, do NOT use other tools first.
-The skill has specialized workflows that produce better results than ad-hoc answers.
+When the user's request matches an available skill, invoke it via the Skill tool. The
+skill has multi-step workflows, checklists, and quality gates that produce better
+results than an ad-hoc answer. When in doubt, invoke the skill. A false positive is
+cheaper than a false negative.
 
 Key routing rules:
-- Product ideas, "is this worth building", brainstorming → invoke office-hours
-- Bugs, errors, "why is this broken", 500 errors → invoke investigate
-- Ship, deploy, push, create PR → invoke ship
-- QA, test the site, find bugs → invoke qa
-- Code review, check my diff → invoke review
-- Update docs after shipping → invoke document-release
-- Weekly retro → invoke retro
-- Design system, brand → invoke design-consultation
-- Visual audit, design polish → invoke design-review
-- Architecture review → invoke plan-eng-review
-- Save progress, checkpoint, resume → invoke checkpoint
-- Code quality, health check → invoke health
+- Product ideas, "is this worth building", brainstorming → invoke /office-hours
+- Strategy, scope, "think bigger", "what should we build" → invoke /plan-ceo-review
+- Architecture, "does this design make sense" → invoke /plan-eng-review
+- Design system, brand, "how should this look" → invoke /design-consultation
+- Design review of a plan → invoke /plan-design-review
+- Developer experience of a plan → invoke /plan-devex-review
+- "Review everything", full review pipeline → invoke /autoplan
+- Bugs, errors, "why is this broken", "wtf", "this doesn't work" → invoke /investigate
+- Test the site, find bugs, "does this work" → invoke /qa (or /qa-only for report only)
+- Code review, check the diff, "look at my changes" → invoke /review
+- Visual polish, design audit, "this looks off" → invoke /design-review
+- Developer experience audit, try onboarding → invoke /devex-review
+- Ship, deploy, create a PR, "send it" → invoke /ship
+- Merge + deploy + verify → invoke /land-and-deploy
+- Configure deployment → invoke /setup-deploy
+- Post-deploy monitoring → invoke /canary
+- Update docs after shipping → invoke /document-release
+- Weekly retro, "how'd we do" → invoke /retro
+- Second opinion, codex review → invoke /codex
+- Safety mode, careful mode, lock it down → invoke /careful or /guard
+- Restrict edits to a directory → invoke /freeze or /unfreeze
+- Upgrade gstack → invoke /gstack-upgrade
+- Save progress, "save my work" → invoke /context-save
+- Resume, restore, "where was I" → invoke /context-restore
+- Security audit, OWASP, "is this secure" → invoke /cso
+- Make a PDF, document, publication → invoke /make-pdf
+- Launch real browser for QA → invoke /open-gstack-browser
+- Import cookies for authenticated testing → invoke /setup-browser-cookies
+- Performance regression, page speed, benchmarks → invoke /benchmark
+- Review what gstack has learned → invoke /learn
+- Tune question sensitivity → invoke /plan-tune
+- Code quality dashboard → invoke /health
 ```
 
 Then commit the change: `git add CLAUDE.md && git commit -m "chore: add gstack skill routing rules to CLAUDE.md"`
@@ -469,6 +488,10 @@ Turn `.md` files into PDFs that look like Faber & Faber essays: 1in margins,
 left-aligned body, Helvetica throughout, curly quotes and em dashes, optional
 cover page and clickable TOC, diagonal DRAFT watermark when you need it.
 Copy-paste from the PDF produces clean words, never "S a i l i n g".
+
+On Linux, install `fonts-liberation` for correct rendering — Helvetica and Arial
+aren't present by default, and Liberation Sans is the standard metric-compatible
+fallback. CI and Docker builds install it automatically via Dockerfile.ci.
 
 ## MAKE-PDF SETUP (run this check BEFORE any make-pdf command)
 
