@@ -226,12 +226,90 @@ When you need to interact with a browser (QA, dogfooding, cookie setup), use the
 project uses.
 
 **Sidebar architecture:** Before modifying `sidepanel.js`, `background.js`,
-`content.js`, `sidebar-agent.ts`, or sidebar-related server endpoints, read
-`docs/designs/SIDEBAR_MESSAGE_FLOW.md`. It documents the full initialization
-timeline, message flow, auth token chain, tab concurrency model, and known
-failure modes. The sidebar spans 5 files across 2 codebases (extension + server)
-with non-obvious ordering dependencies. The doc exists to prevent the kind of
-silent failures that come from not understanding the cross-component flow.
+`content.js`, `terminal-agent.ts`, or sidebar-related server endpoints,
+read `docs/designs/SIDEBAR_MESSAGE_FLOW.md`. The sidebar has one primary
+surface — the **Terminal** pane (interactive `claude` PTY) — with
+Activity / Refs / Inspector as debug overlays behind the footer's
+`debug` toggle. The chat queue path was ripped once the PTY proved out;
+`sidebar-agent.ts` and the `/sidebar-command` / `/sidebar-chat` /
+`/sidebar-agent/event` endpoints are gone. The doc covers the WS auth
+flow, dual-token model, and threat-model boundary — silent failures
+here usually trace to not understanding the cross-component flow.
+
+**WebSocket auth uses Sec-WebSocket-Protocol, not cookies.** Browsers
+can't set `Authorization` on a WebSocket upgrade, but they CAN set
+`Sec-WebSocket-Protocol` via `new WebSocket(url, [token])`. The agent
+reads it, validates against `validTokens`, and MUST echo the protocol
+back in the upgrade response — without the echo, Chromium closes the
+connection immediately. `Set-Cookie: gstack_pty=...` is kept as a
+fallback for non-browser callers (the cross-port `SameSite=Strict`
+cookie path doesn't survive from a chrome-extension origin).
+
+**Cross-pane PTY injection.** The toolbar's Cleanup button and the
+Inspector's "Send to Code" action both pipe text into the live claude
+PTY via `window.gstackInjectToTerminal(text)`, exposed by
+`sidepanel-terminal.js`. No `/sidebar-command` POST — the live REPL is
+the only execution surface in the sidebar now.
+
+**`/health` MUST NOT surface any shell-grant token.** It already leaks
+`AUTH_TOKEN` to localhost callers in headed mode (a v1.1+ TODO). Don't
+make that worse by adding the PTY session token there. PTY auth flows
+through `POST /pty-session` only.
+
+**Transport-layer security** (v1.6.0.0+). When `pair-agent` starts an ngrok tunnel,
+the daemon binds two HTTP listeners: a local listener (127.0.0.1, full command
+surface, never forwarded) and a tunnel listener (locked allowlist: `/connect`,
+`/command` with a scoped token + 17-command browser-driving allowlist,
+`/sidebar-chat`). ngrok forwards only the tunnel port. Root tokens over the tunnel
+return 403. SSE endpoints use a 30-minute HttpOnly `gstack_sse` cookie minted via
+`POST /sse-session` (never valid against `/command`). Tunnel-surface rejections go
+to `~/.gstack/security/attempts.jsonl` via `tunnel-denial-log.ts`. Before editing
+`server.ts`, `sse-session-cookie.ts`, or `tunnel-denial-log.ts`, read
+[ARCHITECTURE.md](ARCHITECTURE.md#dual-listener-tunnel-architecture-v1600) —
+the module boundary (no imports from `token-registry.ts` into `sse-session-cookie.ts`)
+is load-bearing for scope isolation.
+
+**Sidebar security stack** (layered defense against prompt injection):
+
+| Layer | Module | Lives in |
+|-------|--------|----------|
+| L1-L3 | `content-security.ts` | both server and agent — datamarking, hidden element strip, ARIA regex, URL blocklist, envelope wrapping |
+| L4 | `security-classifier.ts` (TestSavantAI ONNX) | **sidebar-agent only** |
+| L4b | `security-classifier.ts` (Claude Haiku transcript) | **sidebar-agent only** |
+| L5 | `security.ts` (canary) | both — inject in compiled, check in agent |
+| L6 | `security.ts` (combineVerdict ensemble) | both |
+
+**Critical constraint:** `security-classifier.ts` CANNOT be imported from the
+compiled browse binary. `@huggingface/transformers` v4 requires `onnxruntime-node`
+which fails to `dlopen` from Bun compile's temp extract dir. Only `security.ts`
+(pure-string operations — canary, verdict combiner, attack log, status) is safe
+for `server.ts`. See `~/.gstack/projects/garrytan-gstack/ceo-plans/2026-04-19-prompt-injection-guard.md`
+§"Pre-Impl Gate 1 Outcome" for full architectural decision.
+
+**Thresholds** (in `security.ts`):
+- `BLOCK: 0.85` — single-layer score that would cause BLOCK if cross-confirmed
+- `WARN: 0.60` — cross-confirm threshold. When L4 AND L4b both >= 0.60 → BLOCK
+- `LOG_ONLY: 0.40` — gates transcript classifier (skip Haiku when all layers < 0.40)
+
+**Ensemble rule:** BLOCK only when the ML content classifier AND the transcript
+classifier both report >= WARN. Single-layer high confidence degrades to WARN —
+this is the Stack Overflow instruction-writing FP mitigation. Canary leak
+always BLOCKs (deterministic).
+
+**Env knobs:**
+- `GSTACK_SECURITY_OFF=1` — emergency kill switch. Classifier stays off even if
+  warmed. Canary is still injected; just the ML scan is skipped.
+- `GSTACK_SECURITY_ENSEMBLE=deberta` — opt-in DeBERTa-v3 ensemble. Adds
+  ProtectAI DeBERTa-v3-base-injection-onnx as L4c classifier for cross-model
+  agreement. 721MB first-run download. With ensemble enabled, BLOCK requires
+  2-of-3 ML classifiers agreeing at >= WARN (testsavant, deberta, transcript).
+  Without ensemble (default), BLOCK requires testsavant + transcript at >= WARN.
+- Classifier model cache: `~/.gstack/models/testsavant-small/` (112MB, first run only)
+  plus `~/.gstack/models/deberta-v3-injection/` (721MB, only when ensemble enabled)
+- Attack log: `~/.gstack/security/attempts.jsonl` (salted sha256 + domain only,
+  rotates at 10MB, 5 generations)
+- Per-device salt: `~/.gstack/security/device-salt` (0600)
+- Session state: `~/.gstack/security/session-state.json` (cross-process, atomic)
 
 **Transport-layer security** (v1.6.0.0+). When `pair-agent` starts an ngrok tunnel,
 the daemon binds two HTTP listeners: a local listener (127.0.0.1, full command
@@ -437,6 +515,31 @@ claims v1.7.0.0 as a MINOR and branch B is also a MINOR, B lands at v1.8.0.0
 "MINOR = feature-only, PATCH = fix-only" as a strict contract. This is why
 `bin/gstack-next-version` advances within the chosen bump level rather than
 repicking the level when collisions happen.
+
+**Scale-aware bumps — use common sense.** When the diff is big, bump MINOR (or
+MAJOR), not PATCH. PATCH is for bug fixes and small additions; MINOR is for
+substantial new capability or substantial reduction; MAJOR is for breaking
+changes. Rough guideposts (don't treat as rules, treat as smell-checks):
+
+- **PATCH (X.Y.Z+1.0)**: bug fix, doc tweak, small additive change, single
+  test/file added. Net diff under ~500 lines, no new user-facing capability.
+- **MINOR (X.Y+1.0.0)**: new capability shipped (skill, harness, command, big
+  refactor), substantial code reduction (compression, migration), or coordinated
+  multi-file change. Net diff over ~2000 lines added/removed, OR a user-visible
+  feature you'd put in a tweet.
+- **MAJOR (X+1.0.0.0)**: breaking change to public surface (CLI flag rename,
+  skill removed, config format changed), OR a release big enough to be the
+  headline of a blog post.
+
+If you find yourself debating "is 10K added + 24K removed really a PATCH?" — it
+isn't. Bump MINOR. Same for "this adds a whole new test harness with 6 new E2E
+tests + helper utilities" — MINOR. The bump level is communication to the user
+about what kind of release this is; don't undersell it.
+
+When merging origin/main brings a higher VERSION, re-evaluate the bump level
+against the SCALE of your branch's work, not just whether main moved forward.
+If main bumped MINOR and your branch is also a substantial change, you bump
+MINOR again on top (e.g., main at v1.14.0.0, your branch lands v1.15.0.0).
 
 **VERSION and CHANGELOG are branch-scoped.** Every feature branch that ships gets its
 own version bump and CHANGELOG entry. The entry describes what THIS branch adds —
@@ -684,3 +787,21 @@ The active skill lives at `~/.claude/skills/gstack/`. After making changes:
 Or copy the binaries directly:
 - `cp browse/dist/browse ~/.claude/skills/gstack/browse/dist/browse`
 - `cp design/dist/design ~/.claude/skills/gstack/design/dist/design`
+
+## Skill routing
+
+When the user's request matches an available skill, invoke it via the Skill tool. When in doubt, invoke the skill.
+
+Key routing rules:
+- Product ideas/brainstorming → invoke /office-hours
+- Strategy/scope → invoke /plan-ceo-review
+- Architecture → invoke /plan-eng-review
+- Design system/plan review → invoke /design-consultation or /plan-design-review
+- Full review pipeline → invoke /autoplan
+- Bugs/errors → invoke /investigate
+- QA/testing site behavior → invoke /qa or /qa-only
+- Code review/diff check → invoke /review
+- Visual polish → invoke /design-review
+- Ship/deploy/PR → invoke /ship or /land-and-deploy
+- Save progress → invoke /context-save
+- Resume context → invoke /context-restore
