@@ -24,6 +24,7 @@ Detailed guides for every gstack skill — philosophy, workflow, and examples.
 | [`/benchmark`](#benchmark) | **Performance Engineer** | Baseline page load times, Core Web Vitals, and resource sizes. Compare before/after on every PR. Track trends over time. |
 | [`/cso`](#cso) | **Chief Security Officer** | OWASP Top 10 + STRIDE threat modeling security audit. Scans for injection, auth, crypto, and access control issues. |
 | [`/document-release`](#document-release) | **Technical Writer** | Update all project docs to match what you just shipped. Catches stale READMEs automatically. |
+| [`/document-generate`](#document-generate) | **Technical Writer** | Generate Diataxis docs (tutorial / how-to / reference / explanation) for a feature from code. |
 | [`/retro`](#retro) | **Eng Manager** | Team-aware weekly retro. Per-person breakdowns, shipping streaks, test health trends, growth opportunities. |
 | [`/browse`](#browse) | **QA Engineer** | Give the agent eyes. Real Chromium browser, real clicks, real screenshots. ~100ms per command. |
 | [`/setup-browser-cookies`](#setup-browser-cookies) | **Session Manager** | Import cookies from your real browser (Chrome, Arc, Brave, Edge) into the headless session. Test authenticated pages. |
@@ -37,9 +38,6 @@ Detailed guides for every gstack skill — philosophy, workflow, and examples.
 | [`/health`](#health) | **Code Quality Dashboard** | Wraps type checker, linter, tests, dead code detection. Computes a weighted 0-10 score; tracks trends over time. |
 | [`/landing-report`](#landing-report) | **Ship Queue Dashboard** | Read-only snapshot of the workspace-aware ship queue. Which version slots are claimed, which sibling workspaces have WIP. |
 | [`/benchmark-models`](#benchmark-models) | **Model Benchmark** | Side-by-side cross-model benchmark for skills (Claude vs GPT vs Gemini). Latency, tokens, cost, optional LLM-judged quality. |
-| | | |
-| **Product Intelligence** | | |
-| [`/oracle`](#oracle) | **Product Memory** | Product intelligence layer. Bootstraps a product map from your codebase, tracks features across sessions, surfaces connections during planning, warns about anti-patterns. Runs silently through every skill. |
 | | | |
 | **Multi-AI** | | |
 | [`/codex`](#codex) | **Second Opinion** | Independent review from OpenAI Codex CLI. Three modes: code review (pass/fail gate), adversarial challenge, and open consultation with session continuity. Cross-model analysis when both `/review` and `/codex` have run. |
@@ -56,6 +54,11 @@ Detailed guides for every gstack skill — philosophy, workflow, and examples.
 | [`/setup-deploy`](#setup-deploy) | **Deploy Configurator** | One-time setup for `/land-and-deploy`. Detects your platform, production URL, and deploy commands. |
 | [`/gstack-upgrade`](#gstack-upgrade) | **Self-Updater** | Upgrade gstack to the latest version. Detects global vs vendored install, syncs both, shows what changed. |
 | [`/make-pdf`](#make-pdf) | **PDF Generator** | Turn any markdown file into a publication-quality PDF. Proper margins, page numbers, cover pages, clickable TOC. |
+| [`/ios-qa`](#ios-qa) | **iOS QA Lead** | Live-device iOS QA via USB CoreDevice tunnel + embedded StateServer. Reads Swift source, codegens accessors, drives the real iPhone. Optionally exposes the device over Tailscale for remote agents. |
+| [`/ios-fix`](#ios-fix) | **iOS Autonomous Fixer** | Closes the find→fix→verify loop on a real iPhone. Captures a reproducing snapshot, fixes the source, rebuilds, redeploys, verifies. |
+| [`/ios-design-review`](#ios-design-review) | **iOS Designer's Eye** | 10-dimension Apple HIG audit on a real iPhone. Rates each screen, says what would make it a 10. |
+| [`/ios-clean`](#ios-clean) | **iOS Bridge Cleanup** | Convenience wrapper to strip DebugBridge SPM + `#if DEBUG` wiring. The structural Release-build guard is in Package.swift + CI; this skill is for guided manual removals. |
+| [`/ios-sync`](#ios-sync) | **iOS Bridge Resync** | Regenerate accessors and Swift templates against the latest upstream gstack. Run when you add new `@Observable` classes or upgrade gstack. |
 
 ---
 
@@ -1099,34 +1102,6 @@ Remove the `/freeze` boundary, allowing edits everywhere again. The hooks stay r
 
 ---
 
-## `/oracle`
-
-Product memory that gives every gstack skill context about your product, not just your code.
-
-Run `/oracle` on any codebase and it bootstraps a `docs/oracle/PRODUCT_MAP.md`, a structured record of every feature, their connections, reusable patterns, and anti-patterns. The map is committed to your repo (in-repo, not hidden) so you can read and verify every claim.
-
-After bootstrap, oracle runs silently. Every planning skill (`/office-hours`, `/plan-ceo-review`, `/plan-eng-review`, etc.) automatically reads the product map for context. Every post-work skill (`/ship`, `/review`, `/qa`) silently updates it. The map gets better with every session.
-
-**6 modes:**
-- `/oracle` (no args, no map) ... **Bootstrap** — analyze codebase, generate product map
-- `/oracle` (no args, map exists) ... **Query** — product overview with feature connections
-- `/oracle inventory` ... **Inventory** — budgeted deep page-by-page scan with checkpointing
-- `/oracle refresh` ... **Refresh** — full re-analysis reconciling against existing map
-- `/oracle update` ... **Update** — lightweight sync from recent git history
-- `/oracle stats` ... **Stats** — product health + codebase health dashboard
-
-**Under the hood:**
-- AST-powered scanner using TypeScript's compiler API (10 frameworks: React Router, Next.js, SvelteKit, Nuxt, Remix, Astro, TanStack Router, Vue Router, Wouter, plus file-based routing)
-- Git co-change analysis for feature complexity classification (EASY/MEDIUM/HARD/MEGA)
-- Tarjan's SCC for circular dependency detection
-- Dead code detection with .oracleignore support
-- HTML import graph visualizer (`--visualize`) and terminal ASCII tree
-- `docs/oracle/inventory/` for detailed per-feature Tier 2 documentation
-
-The product map is self-describing: its header contains the schema and instructions. Skills that read it don't need to know the format in advance, they just follow the header. Schema changes update the map header, not 19 skill templates.
-
----
-
 ## `/gstack-upgrade`
 
 Keep gstack current with one command. It detects your install type (global at `~/.claude/skills/gstack` vs vendored in your project at `.claude/skills/gstack`), runs the upgrade, syncs both copies if you have dual installs, and shows you what changed.
@@ -1208,3 +1183,78 @@ Claude: Replied to Greptile. All tests pass.
 ```
 
 Three Greptile comments. One real fix. One auto-acknowledged. One false positive pushed back with a reply. Total extra time: about 30 seconds.
+
+---
+
+## `/ios-qa`
+
+Live-device iOS QA. The fork's load-bearing insight was: don't simulate, don't run XCTest, don't bring up WebDriverAgent. Embed an HTTP server in the app under test, drive it from a Mac-side daemon over the USB CoreDevice IPv6 tunnel.
+
+The agent reads your Swift source, finds `@Observable` classes with `@Snapshotable`-marked fields, codegens typed accessors, deploys a debug bridge, then runs a closed find→fix→verify loop.
+
+### Architecture in one diagram
+
+```
+       ┌──────────────────────┐   USB CoreDevice (IPv6)   ┌──────────────────┐
+       │ gstack-ios-qa daemon │ ────────────────────────▶ │ iOS app          │
+       │ (Mac, bun/TS)        │   bearer + X-Session-Id   │ StateServer      │
+       │ - rotates boot token │                           │ (loopback only)  │
+       │ - mints session toks │                           └──────────────────┘
+       │ - capability tiers   │
+       │ - audit + redact     │
+       └──────────────────────┘
+                ▲
+                │ Tailscale (optional, --tailnet)
+                │
+       ┌──────────────────────┐
+       │ Remote agent         │
+       │ (OpenClaw, etc.)     │
+       └──────────────────────┘
+```
+
+The iOS app's `StateServer` binds loopback only (`::1` + `127.0.0.1`). The Mac daemon owns tailnet identity validation, capability tiers, and the audit trail. Remote agents NEVER see the boot token — only short-lived session tokens (1h default, 24h hard cap) minted via Tailscale identity gating.
+
+### The unlock: USB-tethered + Tailscale = remote iOS QA from any agent
+
+A Mac plus an iPhone you already own plus the Tailscale free tier replaces what most teams pay BrowserStack/Sauce Labs for. Any HTTP-capable agent on your tailnet can drive the iOS app once you've minted them a session token. Tailscale ACLs scope which identities can reach the Mac at which capability tier.
+
+See `ios-qa/docs/tailscale-acl-example.md` for the runnable setup.
+
+### Capability tiers
+
+| Tier | Endpoints |
+|------|-----------|
+| observe | `/screenshot`, `/elements`, `GET /state/*`, `/state/snapshot`, `/healthz` |
+| interact | observe + `/tap`, `/swipe`, `/type`, `/session/*` |
+| mutate | interact + `POST /state/<key>` |
+| restore | mutate + `POST /state/restore` |
+
+Default minted tokens get `interact`. Higher tiers require explicit owner mint.
+
+---
+
+## `/ios-fix`
+
+Iron Law: no fix without a reproducing snapshot. The agent captures pre-bug state via `GET /state/snapshot`, writes the fix, rebuilds, redeploys, restores the snapshot, and verifies the bug is gone. The snapshot becomes a regression test fixture so the bug can't recur silently.
+
+Mirrors `/qa`'s find-bug → fix → re-verify loop for iOS.
+
+---
+
+## `/ios-design-review`
+
+Designer's-eye QA on a real iPhone. Connects to the same `/ios-qa` daemon in observe-tier mode and screenshots every screen. Scores 10 dimensions 0-10: typography hierarchy, spacing rhythm, color hierarchy, touch targets, loading/empty/error states, accessibility, animation discipline, iOS idiom alignment, information density, AI-slop check.
+
+For each score < 7, uses AskUserQuestion to present the issue with recommended fix.
+
+---
+
+## `/ios-clean`
+
+Convenience wrapper. The structural Release-build guard against shipping DebugBridge is in `Package.swift` (`.when(configuration: .debug)`) plus a CI invariant test. `/ios-clean` is for developers who want a guided removal flow or who manually added the SPM dependency without going through `/ios-qa`.
+
+---
+
+## `/ios-sync`
+
+Run after upgrading gstack or adding new `@Observable` classes. Detects what's installed, runs gen-accessors against the latest upstream templates, refreshes any changed Swift files, verifies the app rebuilds. Cache-key invalidation handles Swift version changes, generator git rev changes, and source changes.
