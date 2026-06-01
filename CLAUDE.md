@@ -112,6 +112,7 @@ gstack/
 ├── office-hours/    # /office-hours skill (YC Office Hours — startup diagnostic + builder brainstorm)
 ├── oracle/          # /oracle skill (product memory — bootstraps product map, tracks features, surfaces connections)
 ├── investigate/     # /investigate skill (systematic root-cause debugging)
+├── spec/            # /spec skill (five-phase spec → GitHub issue, optional agent spawn, /ship auto-closes)
 ├── retro/           # Retrospective skill (includes /retro global cross-project mode)
 ├── bin/             # CLI utilities (gstack-repo-mode, gstack-slug, gstack-config, etc.)
 ├── document-release/ # /document-release skill (post-ship doc updates + Diataxis coverage map)
@@ -294,6 +295,26 @@ response in `server.ts`, read
 `browse/test/server-sanitize-surrogates.test.ts` pins the wiring with invariant
 tests, so bypasses fail CI.
 
+**SSE endpoint helper** (v1.51.0.0+). New SSE endpoints in `server.ts` MUST route
+through `createSseEndpoint(req, config)` from `browse/src/sse-helpers.ts`. The
+helper owns the cleanup contract (abort + enqueue-throw + heartbeat-throw, all
+idempotent) and bakes in `sanitizeLoneSurrogates` on every JSON.stringify, so
+new subscribers can't accidentally regress either invariant. Inline
+`ReadableStream` wiring leaked subscribers when the TCP connection died without
+firing `req.signal.abort` (Chromium MV3 service-worker suspend, intermediate
+proxy half-close). `/activity/stream`, `/inspector/events`, and `/memory`
+(SSE-eligible) all route through it. `browse/test/sse-helpers.test.ts` pins the
+cleanup contract.
+
+**CDP session lifecycle** (v1.51.0.0+). Direct `page.context().newCDPSession(page)`
+calls outside `browse/src/cdp-bridge.ts` fail CI via the static-grep tripwire in
+`browse/test/cdp-session-cleanup.test.ts`. Use `withCdpSession(page, async (s) => {...})`
+for one-shot CDP work (try/finally detach) or `getOrCreateCdpSession(page, cache)`
+for cached sessions tied to a page's lifetime (close-detach via `Map<page, session>`).
+Three sites migrated: cdp-bridge frame events, write-commands archive capture,
+cdp-inspector. The helpers prevent the per-session leak class where successful-path
+detach happened but error-path detach was missed.
+
 **Setup symlink hardening** (v1.38.0.0+). Every link site in `setup` MUST route
 through the `_link_or_copy SRC DST` helper near the `IS_WINDOWS` detection. On
 Windows without Developer Mode, plain `ln -snf` produces frozen file copies that
@@ -397,6 +418,44 @@ tracked by git due to a historical mistake and should eventually be removed with
 because they're tracked despite `.gitignore` — ignore them. When staging files,
 always use specific filenames (`git add file1 file2`) — never `git add .` or
 `git add -A`, which will accidentally include the binaries.
+
+## Redaction guard (PII / secrets / legal content)
+
+Shared redaction engine catches credentials, PII, and legal/damaging content
+before it reaches an external sink (codex dispatch, GitHub issue/PR body, pushed
+commit). It is a **guardrail, not airtight enforcement** — `git push --no-verify`,
+direct `gh issue create`, and `GSTACK_REDACT_PREPUSH=skip` all bypass it. It
+catches accidents and carelessness, the 99% case. Do not claim it stops a
+determined leaker (a CHANGELOG line that does would fail a hostile screenshotter).
+
+- **Engine + taxonomy:** `lib/redact-patterns.ts` (the single source of truth —
+  3 tiers; HIGH = genuinely-secret credentials that block, MEDIUM = PII/legal/
+  internal + high-FP credential shapes that confirm via AskUserQuestion, LOW =
+  FYI) and `lib/redact-engine.ts` (pure `scan()` + `applyRedactions()`).
+  Calibration matters: a gate that cries wolf gets ignored, so context-variable
+  shapes (Stripe `pk_live_`, Google `AIza`, JWT, env `*_KEY=`) sit at MEDIUM.
+- **CLI:** `bin/gstack-redact` (exit 0 clean / 2 MEDIUM / 3 HIGH; `--json`,
+  `--auto-redact`, `--repo-visibility`, `--from-file`). `bin/gstack-redact-prepush`
+  is the opt-in git hook.
+- **Skill docs are generated** from `scripts/resolvers/redact-doc.ts`
+  (`{{REDACT_TAXONOMY_TABLE}}`, `{{REDACT_INVOCATION_BLOCK:<sink>}}`) so /spec,
+  /cso, /ship, /document-release, /document-generate never drift from the engine.
+- **Scan-at-sink:** always scan the EXACT bytes that will be sent — write to a
+  temp file, scan that file, pass the SAME file to `gh`/`git`. Never scan a string
+  then re-render (that reopens a scan-vs-send gap).
+- **Visibility (no tier promotion):** resolve once per run, order = local config
+  (`gstack-config get redact_repo_visibility`, ~/.gstack so never committed) → gh
+  → glab → unknown(=public-strict). Public repos get STERNER per-finding
+  confirmation (no batch-acknowledge, no silent-proceed); MEDIUM is never
+  auto-promoted to HIGH.
+- **Tool-attributed fences:** wrap Codex/Greptile/eval output in ` ```codex-review `
+  / ` ```greptile ` fences so example credentials those tools quote WARN-degrade
+  instead of blocking. A live-format credential inside the fence still blocks.
+- **Config keys:** `redact_repo_visibility` (public|private|unknown, local-only
+  override for repos gh/glab can't read), `redact_prepush_hook` (true|false).
+  There is intentionally NO key to disable HIGH blocking.
+- **Audit:** the /spec semantic pass appends a content-free record (categories +
+  body sha256, no spec text) to `~/.gstack/security/semantic-reviews.jsonl` (0600).
 
 ## Commit style
 
@@ -879,5 +938,11 @@ Grep is still right for known exact strings, regex, multiline patterns, and
 file globs. Run `/sync-gbrain` after meaningful code changes; for ongoing
 auto-sync across all worktrees, run `gbrain autopilot --install` once per
 machine — gbrain's daemon handles incremental refresh on a schedule.
+
+Safety: don't run `/sync-gbrain` while `gbrain autopilot` is active — the
+orchestrator refuses destructive source ops when it detects a running autopilot
+to avoid racing it (#1734). Prefer registering user repos with `gbrain sources
+add --path <dir>` (no `--url`): URL-managed sources can auto-reclone, and the
+sync code walk for them requires an explicit `--allow-reclone` opt-in.
 
 <!-- gstack-gbrain-search-guidance:end -->
