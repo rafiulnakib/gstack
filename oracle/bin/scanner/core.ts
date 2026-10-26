@@ -8,7 +8,7 @@
  * - Classification and session estimation
  */
 
-import * as ts from "typescript";
+import * as ts from "typescript-api";
 import * as path from "path";
 import * as fs from "fs";
 import * as crypto from "crypto";

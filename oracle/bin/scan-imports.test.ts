@@ -755,7 +755,7 @@ describe("integration: css-project pipeline", () => {
 });
 
 // ─── Deferred Dynamic Import Tests ──────────────────────────────────────────
-import * as ts from "typescript";
+import * as ts from "typescript-api";
 
 /** Helper: parse a TS snippet, find the import() CallExpression, and run isDeferredImport */
 function checkDeferred(code: string): boolean {

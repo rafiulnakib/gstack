@@ -5,7 +5,7 @@
  * with a stripped-eval fallback for configs that use runtime expressions.
  */
 
-import * as ts from "typescript";
+import * as ts from "typescript-api";
 import * as fs from "fs";
 import * as path from "path";
 
