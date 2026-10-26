@@ -1,86 +1,107 @@
-/**
- * cso security-guidance preservation test (v1.45.0.0 T6).
- *
- * The cso skill carries load-bearing security prose: OWASP Top 10 mappings,
- * STRIDE threat-model phrasing, "do not auto-fix without user approval"
- * gates. Codex 2nd-pass critique #9: "cso exemption too broad ... should
- * still get resolver dedup, catalog trim, sectioning if safe, and targeted
- * evals around must-not-miss checks."
- *
- * This test pins the must-not-miss checks. cso gets the same resolver gate
- * (T2), jargon dedup (T3), and catalog trim (T4) as every other skill — but
- * its security-guidance body content stays intact. Future compression work
- * that would strip this content fails CI here.
- */
-
+/** Security-critical CSO routing/proof policy must remain in the always-loaded controller. */
 import { describe, test, expect } from 'bun:test';
 import * as fs from 'fs';
 import * as path from 'path';
+import { expectMentions, expectTokens } from './helpers/prompt-structure';
 
-const REPO_ROOT = path.resolve(import.meta.dir, '..');
-const CSO_SKILL = path.join(REPO_ROOT, 'cso', 'SKILL.md');
+const ROOT = path.resolve(import.meta.dir, '..');
+const controller = () => fs.readFileSync(path.join(ROOT, 'cso/SKILL.md'), 'utf8');
+const template = () => fs.readFileSync(path.join(ROOT, 'cso/SKILL.md.tmpl'), 'utf8');
+const domain = () => fs.readFileSync(path.join(ROOT, 'cso/sections/audit-phases.md'), 'utf8');
 
-const MUST_PRESERVE_PHRASES = [
-  // OWASP / STRIDE positioning
-  'OWASP',
-  'STRIDE',
-  // Mode discipline
-  'daily',
-  'comprehensive',
-  // Severity language
-  'confidence',
-  // Active verification requirement (codex critique: "active verification")
-  'verif', // covers "verify", "verification", "verified"
-];
-
-const MUST_PRESERVE_HEADINGS = [
-  '## Preamble',  // from PREAMBLE resolver
-];
-
-describe('cso skill preserves load-bearing security guidance', () => {
-  test('cso/SKILL.md exists and is non-trivial', () => {
-    expect(fs.existsSync(CSO_SKILL)).toBe(true);
-    const content = fs.readFileSync(CSO_SKILL, 'utf-8');
-    // cso is a content-heavy security skill; under 30 KB suggests stripping went too far.
-    expect(content.length).toBeGreaterThan(30_000);
+describe('CSO v3 always-loaded policy', () => {
+  test('dispatch and execution boundaries are available before a host section read', () => {
+    const text = controller();
+    const stop = text.indexOf('> **STOP.**');
+    for (const directive of ['## Arguments', '## Mode Resolution', '**Private startup.**', 'untrusted evidence']) {
+      expect(text.indexOf(directive)).toBeGreaterThan(-1);
+      if (stop >= 0) expect(text.indexOf(directive)).toBeLessThan(stop);
+    }
+    for (const phase of [0, 1, 12, 13, 14]) expect(text).toContain(`### Phase ${phase}:`);
   });
 
-  test('cso preserves required security phrases (case-insensitive)', () => {
-    const content = fs.readFileSync(CSO_SKILL, 'utf-8').toLowerCase();
-    const missing: string[] = [];
-    for (const phrase of MUST_PRESERVE_PHRASES) {
-      if (!content.includes(phrase.toLowerCase())) missing.push(phrase);
+  test('every scope and lifecycle entrypoint survives host generation', () => {
+    const text = controller();
+    for (const flag of ['--infra', '--code', '--skills', '--supply-chain', '--owasp', '--scope', '--diff', '--base', '--budget', '--offline', '--comprehensive', '--doctor', '--resume', '--replay', '--recheck']) {
+      expect(text).toContain(flag);
     }
-    if (missing.length > 0) {
-      throw new Error(
-        `cso/SKILL.md is missing required security phrases: ${missing.join(', ')}. ` +
-        `These are load-bearing for the skill's audit posture. If you intentionally ` +
-        `removed them, update this test with the new phrasing.`,
-      );
+    expect(text).toContain('mutually exclusive');
+    for (const command of ['start', 'doctor', 'resume', 'replay', 'recheck', 'inspect', 'read', 'history', 'scan', 'import-sarif', 'submit', 'verify', 'finish', 'import-v2', 'inspect-v2', 'schema']) {
+      expect(text).toContain(`gstack-cso ${command}`);
     }
   });
 
-  test('cso preserves required headings', () => {
-    const content = fs.readFileSync(CSO_SKILL, 'utf-8');
-    for (const heading of MUST_PRESERVE_HEADINGS) {
-      expect(content).toContain(heading);
+  test('CSO cannot acquire shared preamble execution or content-export hooks', () => {
+    for (const forbidden of ['{{PREAMBLE}}', '{{GBRAIN_CONTEXT_LOAD}}', '{{GBRAIN_SAVE_RESULTS}}', '{{LEARNINGS_SEARCH}}', '{{LEARNINGS_LOG}}', '{{CONFIDENCE_CALIBRATION}}']) {
+      expect(template()).not.toContain(forbidden);
     }
+    const text = controller();
+    expect(text).not.toContain('gstack-skill-start');
+    expect(text).not.toContain('gstack-telemetry-log');
+    expect(text).not.toContain('gstack-review-log');
+    expectMentions(text, [['do not', 'harnesses', 'findings']], 'text');
+    expect(text).toContain('trusted installed gstack distribution');
   });
 
-  test('cso catalog trim landed (frontmatter description ≤ 200 chars)', () => {
-    const content = fs.readFileSync(CSO_SKILL, 'utf-8');
-    const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
-    expect(fmMatch).not.toBeNull();
-    const fm = fmMatch![1];
-    const descMatch = fm.match(/^description:\s+(.+)$/m);
-    expect(descMatch).not.toBeNull();
-    const desc = descMatch![1].trim();
-    expect(desc.length).toBeLessThanOrEqual(200);
-    expect(desc).toContain('(gstack)');
+  test('static review cannot acquire tested or current-source closure labels', () => {
+    const text = controller();
+    for (const proof of ['CSO evidence rubric', 'identical security assertion', 'legitimate control passes', 'pristine second copy', 'before/after configuration and dependency closures', 'boundary-replacing mocks', 'legacy review evidence', 'new evidence covering the same root cause']) {
+      expect(text).toContain(proof);
+    }
+    expectMentions(text, [['cannot', 'application', 'establish']], 'text');
   });
 
-  test('cso routing prose moved to "## When to invoke" body section', () => {
-    const content = fs.readFileSync(CSO_SKILL, 'utf-8');
-    expect(content).toContain('## When to invoke this skill');
+  test('runtime and scanner execution claims require qualified catalog profiles', () => {
+    const text = controller();
+    expectMentions(text, [['without', 'assessment', 'available']], 'text');
+    expect(text).toContain('matching qualified runtime catalog profile');
+    expect(text).toContain('Project-test completion remains `self_reported`');
+    expectTokens(text, ['`tested`'], 'text');
+    expectMentions(text, [['until', 'target-independent', 'completion']], 'text');
+    expect(domain()).toContain('matching qualified scanner catalog profile');
+  });
+
+  test('sensitive helper control files stay out of the audited working tree', () => {
+    const text = controller();
+    for (const proof of ['Private control files', 'umask 077', 'mode-`0700`', 'mode-`0600`', 'outside the audited repository', 'remove each control file immediately']) expect(text).toContain(proof);
+    for (const proof of ['Audited-source access invariant', "only with that run's `inspect`, `read`, and `history`", 'exact `path` from `inspect`', '`displayPath` is only a redacted label', 'Never use host `Read`/`Glob`/`Grep`', 'direct reads bypass']) expect(text).toContain(proof);
+    for (const proof of ["copy every record's `domain` and `scope` exactly", 'a new scope leaves the planned scope unassessed', 'Only helper commands may update helper-owned records']) expect(text).toContain(proof);
+  });
+
+  test('supported findings are persisted and surfaced before the final report', () => {
+    const text = controller();
+    expect(text).toContain('Invoke `start` exactly once');
+    expect(text).toContain('never call `start` again');
+    expect(text).toContain('same ID');
+    expect(text).toContain('submit it to the helper **and surface it to the user immediately**');
+    expectMentions(text, [['do not', 'report', 'final']], 'text');
+    expect(text).toContain('if the run is interrupted');
+  });
+
+  test('empty, partial, redaction failure, persistence failure and expiry stay truthful', () => {
+    const text = controller();
+    for (const contract of ['**complete**, **partial**, or **not assessed**', 'No supported findings in the assessed scope.', 'PERSISTENCE_FAILED', 'MISSING_INPUT', 'withhold the payload entirely', 'one bounded correction attempt', 'seven days', 'thirty days']) {
+      expect(text).toContain(contract);
+    }
+    expect(text).toContain('outside synchronization allowlists');
+  });
+
+  test('obsolete blanket exclusions and certainty scores are absent', () => {
+    const text = controller() + domain();
+    for (const obsolete of ['8/10 confidence gate', '2/10 confidence gate', 'devDependency CVEs are MEDIUM max', "gstack's own skills are trusted", 'User content in the user-message position of an AI conversation is NOT prompt injection', 'pull_request_target` without PR ref checkout is safe', 'Hard exclusions — automatically discard']) {
+      expect(text).not.toContain(obsolete);
+    }
+    expect(text).toContain('Unknown reachability remains');
+    expect(text).toContain('sequential challenge; independent agent unavailable');
+  });
+
+  test('controller stays compact without moving proof policy behind a section read', () => {
+    expect(Buffer.byteLength(template())).toBeLessThan(18_000);
+    expect(Buffer.byteLength(controller())).toBeLessThan(20_000);
+    expect(Buffer.byteLength(controller() + domain())).toBeLessThan(36_000);
+    const frontmatter = controller().match(/^---\n([\s\S]*?)\n---/)![1];
+    const description = frontmatter.match(/^description:\s+(.+)$/m)![1].trim();
+    expect(description.length).toBeLessThanOrEqual(200);
+    expect(description).toContain('(gstack)');
   });
 });
